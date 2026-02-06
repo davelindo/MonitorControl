@@ -8,9 +8,9 @@ let ARM64_DDC_DATA_ADDRESS: UInt8 = 0x51
 
 class Arm64DDC: NSObject {
   #if arch(arm64)
-    public static let isArm64: Bool = true
+    static let isArm64: Bool = true
   #else
-    public static let isArm64: Bool = false
+    static let isArm64: Bool = false
   #endif
   static let MAX_MATCH_SCORE: Int = 20
 
@@ -116,7 +116,7 @@ class Arm64DDC: NSObject {
     return success
   }
 
-  // DDC checksum calculator
+  /// DDC checksum calculator
   static func checksum(chk: UInt8, data: inout [UInt8], start: Int, end: Int) -> UInt8 {
     var chkd: UInt8 = chk
     for i in start ... end {

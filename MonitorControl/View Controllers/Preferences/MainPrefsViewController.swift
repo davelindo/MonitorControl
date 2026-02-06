@@ -27,6 +27,15 @@ class MainPrefsViewController: NSViewController, SettingsPane {
   @IBOutlet var rowDoNothingStartupText: NSGridRow!
   @IBOutlet var rowWriteStartupText: NSGridRow!
   @IBOutlet var rowReadStartupText: NSGridRow!
+  private var autoHideNoLGButton: NSButton?
+  private var dynamicBrightnessButton: NSButton?
+
+  private static func boolPref(_ key: PrefKey, default defaultValue: Bool) -> Bool {
+    if prefs.object(forKey: key.rawValue) == nil {
+      return defaultValue
+    }
+    return prefs.bool(forKey: key.rawValue)
+  }
 
   func updateGridLayout() {
     if self.startupAction.selectedTag() == StartupAction.doNothing.rawValue {
@@ -47,6 +56,8 @@ class MainPrefsViewController: NSViewController, SettingsPane {
   @available(macOS, deprecated: 10.10)
   override func viewDidLoad() {
     super.viewDidLoad()
+    self.installAutoHideNoLGRowIfNeeded()
+    self.installDynamicBrightnessRowIfNeeded()
     self.populateSettings()
   }
 
@@ -61,12 +72,65 @@ class MainPrefsViewController: NSViewController, SettingsPane {
     self.enableSmooth.state = prefs.bool(forKey: PrefKey.disableSmoothBrightness.rawValue) ? .off : .on
     self.enableBrightnessSync.state = prefs.bool(forKey: PrefKey.enableBrightnessSync.rawValue) ? .on : .off
     self.startupAction.selectItem(withTag: prefs.integer(forKey: PrefKey.startupAction.rawValue))
+    if let autoHideNoLGButton = self.autoHideNoLGButton {
+      let autoHideEnabled = Self.boolPref(.autoHideWhenNoLG, default: true)
+      autoHideNoLGButton.state = autoHideEnabled ? .on : .off
+    }
+    if let dynamicBrightnessButton = self.dynamicBrightnessButton {
+      dynamicBrightnessButton.state = prefs.bool(forKey: PrefKey.dynamicBrightnessEnabled.rawValue) ? .on : .off
+    }
     // Preload Display settings to some extent to properly set up size in orther that animation won't fail
     menuslidersPrefsVc?.view.layoutSubtreeIfNeeded()
     keyboardPrefsVc?.view.layoutSubtreeIfNeeded()
     displaysPrefsVc?.view.layoutSubtreeIfNeeded()
     aboutPrefsVc?.view.layoutSubtreeIfNeeded()
     self.updateGridLayout()
+  }
+
+  private func installAutoHideNoLGRowIfNeeded() {
+    self.installCheckboxRowIfNeeded(
+      button: &self.autoHideNoLGButton,
+      title: NSLocalizedString("Hide menu bar item when no LG display is connected", comment: "General preference"),
+      action: #selector(self.autoHideWhenNoLGClicked(_:))
+    )
+  }
+
+  private func installDynamicBrightnessRowIfNeeded() {
+    self.installCheckboxRowIfNeeded(
+      button: &self.dynamicBrightnessButton,
+      title: NSLocalizedString("Enable dynamic brightness (ambient + location fallback)", comment: "General preference"),
+      action: #selector(self.dynamicBrightnessClicked(_:))
+    )
+  }
+
+  private func installCheckboxRowIfNeeded(button: inout NSButton?, title: String, action: Selector) {
+    guard button == nil else {
+      return
+    }
+    guard let gridView = self.view.subviews.compactMap({ $0 as? NSGridView }).first else {
+      return
+    }
+    let checkbox = NSButton(checkboxWithTitle: title, target: self, action: action)
+    checkbox.translatesAutoresizingMaskIntoConstraints = false
+
+    let spacer = NSView(frame: .zero)
+    spacer.translatesAutoresizingMaskIntoConstraints = false
+
+    let row = gridView.addRow(with: [spacer, checkbox])
+    row.bottomPadding = -13
+    button = checkbox
+  }
+
+  @objc private func autoHideWhenNoLGClicked(_ sender: NSButton) {
+    let enabled = sender.state == .on
+    prefs.set(enabled, forKey: PrefKey.autoHideWhenNoLG.rawValue)
+    app.configure()
+  }
+
+  @objc private func dynamicBrightnessClicked(_ sender: NSButton) {
+    let enabled = sender.state == .on
+    prefs.set(enabled, forKey: PrefKey.dynamicBrightnessEnabled.rawValue)
+    DynamicBrightnessManager.shared.updateEnabledState()
   }
 
   @IBAction func startAtLoginClicked(_ sender: NSButton) {
@@ -112,7 +176,7 @@ class MainPrefsViewController: NSViewController, SettingsPane {
       prefs.set(false, forKey: PrefKey.allowZeroSwBrightness.rawValue)
     default: break
     }
-    for display in DisplayManager.shared.getOtherDisplays() {
+    for display in DisplayManager.shared.getLGOtherDisplays() {
       _ = display.setDirectBrightness(1)
       _ = display.setSwBrightness(1)
     }

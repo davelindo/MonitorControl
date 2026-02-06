@@ -3,155 +3,173 @@
 enum PrefKey: String {
   /* -- App-wide settings -- */
 
-  // Sparkle automatic checks
+  /// Sparkle automatic checks
   case SUEnableAutomaticChecks
 
-  // Receive beta updates?
+  /// Receive beta updates?
   case isBetaChannel // This is not added to Settings yet as it will be needed in the future only.
 
-  // Build number
+  /// Build number
   case buildNumber
 
-  // Was the app launched once
+  /// Was the app launched once
   case appAlreadyLaunched
 
-  // Hide menu icon
+  /// Hide menu icon
   case menuIcon
 
-  // Menu item style
+  /// Menu item style
   case menuItemStyle
 
-  // Keys listened for
+  /// Use the redesigned menu popover UI (macOS 26+)
+  case useNewPopoverUI
+
+  /// How display cards should expand/collapse in the menu popover
+  case popoverCardExpansionMode
+
+  /// Persist per-display expansion state for menu popover display cards
+  case popoverRememberExpandedDisplays
+
+  /// Persisted set of expanded effective display IDs for menu popover display cards
+  case popoverExpandedDisplayIDs
+
+  /// Keys listened for
   case keyboardBrightness
 
-  // Keys listened for
+  /// Keys listened for
   case keyboardVolume
 
-  // Don't listen to F14/F15
+  /// Don't listen to F14/F15
   case disableAltBrightnessKeys
 
-  // Hide brightness sliders
+  /// Hide brightness sliders
   case hideBrightness
 
-  // Show volume sliders
+  /// Show volume sliders
   case showContrast
 
-  // Show volume sliders
+  /// Show volume sliders
   case hideVolume
 
-  // Lower via software after brightness
+  /// Lower via software after brightness
   case disableCombinedBrightness
 
-  // Use separated OSD scale for combined brightness
+  /// Use separated OSD scale for combined brightness
   case separateCombinedScale
 
-  // Do not show sliders for Apple displays (including built-in display) in menu
+  /// Do not show sliders for Apple displays (including built-in display) in menu
   case hideAppleFromMenu
 
-  // Disable slider snapping
+  /// Disable slider snapping
   case enableSliderSnap
 
-  // Disable slider snapping
+  /// Disable slider snapping
   case enableSliderPercent
 
-  // Show tick marks for sliders
+  /// Show tick marks for sliders
   case showTickMarks
 
-  // Instead of assuming default values, enable read or write upon startup (according to readDDCInsteadOfRestoreValues)
+  /// Instead of assuming default values, enable read or write upon startup (according to readDDCInsteadOfRestoreValues)
   case startupAction
 
-  // Show advanced options under Displays tab in Settings
+  /// Show advanced options under Displays tab in Settings
   case showAdvancedSettings
 
-  // Allow zero software brightness
+  /// Allow zero software brightness
   case allowZeroSwBrightness
 
-  // Keyboard brightness control for multiple displays
+  /// Keyboard brightness control for multiple displays
   case multiKeyboardBrightness
 
-  // Keyboard volume control for multiple devices
+  /// Keyboard volume control for multiple devices
   case multiKeyboardVolume
 
-  // Use fine OSD scale for brightness
+  /// Use fine OSD scale for brightness
   case useFineScaleBrightness
 
-  // Use fine OSD scale for volume
+  /// Use fine OSD scale for volume
   case useFineScaleVolume
 
-  // Use smoothBrightness
+  /// Use smoothBrightness
   case disableSmoothBrightness
 
-  // Synchronize brightness from sync source displays among all other displays
+  /// Synchronize brightness from sync source displays among all other displays
   case enableBrightnessSync
 
-  // Sliders for multiple displays
+  /// Sliders for multiple displays
   case multiSliders
+
+  /// Hide menu bar item and pause work when no LG display is connected
+  case autoHideWhenNoLG
+
+  /// Enable dynamic brightness adjustments
+  case dynamicBrightnessEnabled
 
   /* -- Display specific settings */
 
-  // Enable mute DDC for display
+  /// Enable mute DDC for display
   case enableMuteUnmute
 
-  // Hide OSD for display
+  /// Hide OSD for display
   case hideOsd
 
-  // Longer delay DDC for display
+  /// Longer delay DDC for display
   case longerDelay
 
-  // DDC polling mode for display
+  /// DDC polling mode for display
   case pollingMode
 
-  // DDC polling count for display
+  /// DDC polling count for display
   case pollingCount
 
-  // Display should avoid gamma table manipulation and use shades instead (to coexist with other apps doing gamma manipulation)
+  /// Display should avoid gamma table manipulation and use shades instead (to coexist with other apps doing gamma manipulation)
   case avoidGamma
 
-  // User assigned audio device name for display
+  /// User assigned audio device name for display
   case audioDeviceNameOverride
 
-  // Display disabled for keyboard control
+  /// Display disabled for keyboard control
   case isDisabled
 
-  // Force software mode for display
+  /// Force software mode for display
   case forceSw
 
-  // Software brightness for display
+  /// Software brightness for display
   case SwBrightness
 
-  // Combined brightness switching point
+  /// Combined brightness switching point
   case combinedBrightnessSwitchingPoint
 
-  // Friendly name
+  /// Friendly name
   case friendlyName
 
   /* -- Display+Command specific settings -- */
 
-  // Command value display
+  /// Command value display
   case value
 
-  // Was the setting ever changed by the user?
+  /// Was the setting ever changed by the user?
   case isTouched
 
-  // Min command value display
+  /// Min command value display
   case minDDCOverride
 
-  // Max command value display
+  /// Max command value display
   case maxDDC
 
-  // Max user override command value display
+  /// Max user override command value display
   case maxDDCOverride
 
-  // Max command value display
+  /// Max command value display
   case curveDDC
 
-  // Is the specific control is set as unavailable for display?
+  /// Is the specific control is set as unavailable for display?
   case unavailableDDC
 
-  // Invert DDC scale?
+  /// Invert DDC scale?
   case invertDDC
 
-  // Override DDC control command code
+  /// Override DDC control command code
   case remapDDC
 }
 
@@ -198,6 +216,12 @@ enum MenuItemStyle: Int {
   case icon = 0
   case text = 1
   case hide = 2
+}
+
+enum PopoverCardExpansionMode: Int {
+  case auto = 0
+  case expanded = 1
+  case collapsed = 2
 }
 
 enum KeyboardBrightness: Int {

@@ -16,9 +16,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     item.behavior = .removalAllowed
     return item
   }()
+
   var mediaKeyTap = MediaKeyTapManager()
   var keyboardShortcuts = KeyboardShortcutsManager()
   let coreAudio = SimplyCoreAudio()
+  // Store as base types; availability-gated casts call SwiftUI controllers.
+  var menuPopoverController: NSObject?
   var accessibilityObserver: NSObjectProtocol!
   var statusItemObserver: NSObjectProtocol!
   var statusItemVisibilityChangedByUser = true
@@ -26,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var sleepID: Int = 0 // sleep event ID
   var safeMode = false
   var jobRunning = false
+  private let jobQueue = DispatchQueue(label: "MonitorControl job queue", qos: .userInitiated)
   var startupActionWriteCounter: Int = 0
   var audioPlayer: AVAudioPlayer?
   let updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: UpdaterDelegate(), userDriverDelegate: nil)
@@ -49,6 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     style: self.settingsPaneStyle,
     animated: true
   )
+  private var preferencesWindowController: NSWindowController?
 
   func applicationDidFinishLaunching(_: Notification) {
     app = self
@@ -64,13 +69,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     self.setMenu()
     CGDisplayRegisterReconfigurationCallback({ _, _, _ in app.displayReconfigured() }, nil)
     self.configure(firstrun: true)
+    // Re-evaluate visibility after the launch grace window expires.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+      self.updateMenusAndKeys()
+    }
     DisplayManager.shared.createGammaActivityEnforcer()
     self.updaterController.startUpdater()
   }
 
   @objc func quitClicked(_: AnyObject) {
     os_log("Quit clicked", type: .info)
-    menu.closeMenu()
+    if #available(macOS 10.15, *), let controller = self.menuPopoverController as? MenuPopoverController {
+      controller.closePopover()
+    } else {
+      menu?.closeMenu()
+    }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
       NSApplication.shared.terminate(self)
     }
@@ -78,6 +91,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc func prefsClicked(_: AnyObject) {
     os_log("Settings clicked", type: .info)
+    if #available(macOS 13.0, *) {
+      if self.preferencesWindowController == nil {
+        self.preferencesWindowController = PreferencesWindowController()
+      }
+      if let controller = self.preferencesWindowController as? PreferencesWindowController {
+        controller.show()
+      } else {
+        self.preferencesWindowController?.showWindow(nil)
+      }
+      return
+    }
+
     self.settingsWindowController.show()
   }
 
@@ -112,6 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       // Only settings that are not false, 0 or "" by default are set here. Assumes pre-wiped database.
       prefs.set(true, forKey: PrefKey.appAlreadyLaunched.rawValue)
       prefs.set(true, forKey: PrefKey.SUEnableAutomaticChecks.rawValue)
+      prefs.set(true, forKey: PrefKey.autoHideWhenNoLG.rawValue)
     }
   }
 
@@ -140,12 +166,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     DisplayManager.shared.gammaInterferenceCounter = 0
     DisplayManager.shared.configureDisplays()
     DisplayManager.shared.addDisplayCounterSuffixes()
+    let lgActive = DisplayManager.shared.isLGActive()
+    if !lgActive {
+      os_log("No LG displays detected; pausing MonitorControl work.", type: .info)
+      self.jobRunning = false
+      self.updateMenusAndKeys()
+      DynamicBrightnessManager.shared.updateEnabledState()
+      return
+    }
     DisplayManager.shared.updateArm64AVServices()
     if firstrun && prefs.integer(forKey: PrefKey.startupAction.rawValue) != StartupAction.write.rawValue {
       DisplayManager.shared.resetSwBrightnessForAllDisplays(prefsOnly: true)
     }
     DisplayManager.shared.setupOtherDisplays(firstrun: firstrun)
     self.updateMenusAndKeys()
+    DynamicBrightnessManager.shared.updateEnabledState()
     if !firstrun || prefs.integer(forKey: PrefKey.startupAction.rawValue) == StartupAction.write.rawValue {
       if !prefs.bool(forKey: PrefKey.disableCombinedBrightness.rawValue) {
         DisplayManager.shared.restoreSwBrightnessForAllDisplays(async: !prefs.bool(forKey: PrefKey.disableSmoothBrightness.rawValue))
@@ -156,8 +191,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func updateMenusAndKeys() {
-    menu.updateMenus()
-    self.updateMediaKeyTap()
+    let lgActive = DisplayManager.shared.isLGActive()
+    let keepMenuVisible = DisplayManager.shared.shouldKeepMenuVisible()
+    if lgActive || keepMenuVisible {
+      if #available(macOS 10.15, *), let controller = self.menuPopoverController as? MenuPopoverController {
+        controller.updateStatusItemVisibility()
+      } else {
+        menu?.updateMenus()
+      }
+    } else {
+      if #available(macOS 10.15, *), let controller = self.menuPopoverController as? MenuPopoverController {
+        controller.closePopover()
+      } else {
+        menu?.closeMenu()
+      }
+      self.updateStatusItemVisibility(false)
+    }
+    self.updateMediaKeyTap(active: lgActive)
   }
 
   func checkPermissions(firstAsk: Bool = false) {
@@ -175,7 +225,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.sleepNotification), name: NSWorkspace.willSleepNotification, object: nil)
     NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.wakeNotification), name: NSWorkspace.didWakeNotification, object: nil)
     _ = DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name(rawValue: NSNotification.Name.accessibilityApi.rawValue), object: nil, queue: nil) { _ in DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.updateMediaKeyTap() } } // listen for accessibility status changes
-    self.statusItemObserver = statusItem.observe(\.isVisible, options: [.old, .new]) { _, _ in self.statusItemVisibilityChanged() }
+    self.statusItemObserver = self.statusItem.observe(\.isVisible, options: [.old, .new]) { _, _ in self.statusItemVisibilityChanged() }
   }
 
   @objc private func sleepNotification() {
@@ -232,31 +282,64 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     guard !(self.jobRunning && start) else {
       return
     }
+    guard DisplayManager.shared.isLGActive() else {
+      if self.jobRunning {
+        os_log("MonitorControl job paused; no LG displays detected.", type: .info)
+      }
+      self.jobRunning = false
+      return
+    }
     if self.sleepID == 0, self.reconfigureID == 0 {
       if !self.jobRunning {
         os_log("MonitorControl job started.", type: .info)
         self.jobRunning = true
       }
-      var refreshedSomething = false
-      for display in DisplayManager.shared.displays {
-        let delta = display.refreshBrightness()
-        if delta != 0 {
-          refreshedSomething = true
+      let appleDisplaysToSample = DisplayManager.shared.getLGAppleDisplays().filter { !$0.smoothBrightnessRunning }
+      self.jobQueue.async {
+        var appleSamples: [CGDirectDisplayID: Float] = [:]
+        for appleDisplay in appleDisplaysToSample {
+          appleSamples[appleDisplay.identifier] = appleDisplay.getAppleBrightness()
+        }
+        DispatchQueue.main.async {
+          guard self.sleepID == 0, self.reconfigureID == 0, DisplayManager.shared.isLGActive() else {
+            self.jobRunning = false
+            os_log("MonitorControl job died because of sleep, reconfiguration, or LG inactivity.", type: .info)
+            return
+          }
+          var refreshedSomething = false
+          var deltas: [(Display, Float)] = []
+          let displays = DisplayManager.shared.getLGDisplays()
+          for display in displays {
+            let delta: Float
+            if let appleDisplay = display as? AppleDisplay {
+              if let sampled = appleSamples[appleDisplay.identifier] {
+                delta = appleDisplay.applySampledBrightness(sampled)
+              } else {
+                delta = 0
+              }
+            } else {
+              delta = display.refreshBrightness()
+            }
+            if delta != 0 {
+              refreshedSomething = true
+              deltas.append((display, delta))
+            }
+          }
           if prefs.bool(forKey: PrefKey.enableBrightnessSync.rawValue) {
-            for targetDisplay in DisplayManager.shared.displays where targetDisplay != display {
-              os_log("Updating delta from display %{public}@ to display %{public}@", type: .info, String(display.identifier), String(targetDisplay.identifier))
-              let newValue = max(0, min(1, targetDisplay.getBrightness() + delta))
-              _ = targetDisplay.setBrightness(newValue)
-              if let slider = targetDisplay.sliderHandler[.brightness] {
-                slider.setValue(newValue, displayID: targetDisplay.identifier)
+            for (sourceDisplay, delta) in deltas {
+              for targetDisplay in displays where targetDisplay != sourceDisplay {
+                os_log("Updating delta from display %{public}@ to display %{public}@", type: .info, String(sourceDisplay.identifier), String(targetDisplay.identifier))
+                let newValue = max(0, min(1, targetDisplay.getBrightness() + delta))
+                _ = targetDisplay.setBrightness(newValue)
+                targetDisplay.sliderHandler[.brightness]?.setValue(newValue, displayID: targetDisplay.identifier)
               }
             }
           }
+          let nextRefresh = refreshedSomething ? 0.1 : 1.0
+          DispatchQueue.main.asyncAfter(deadline: .now() + nextRefresh) {
+            self.job()
+          }
         }
-      }
-      let nextRefresh = refreshedSomething ? 0.1 : 1.0
-      DispatchQueue.main.asyncAfter(deadline: .now() + nextRefresh) {
-        self.job()
       }
     } else {
       self.jobRunning = false
@@ -292,9 +375,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     self.updateMediaKeyTap()
   }
 
-  func updateMediaKeyTap() {
+  func updateMediaKeyTap(active: Bool = DisplayManager.shared.isLGActive()) {
     MediaKeyTap.useAlternateBrightnessKeys = !prefs.bool(forKey: PrefKey.disableAltBrightnessKeys.rawValue)
-    self.mediaKeyTap.updateMediaKeyTap()
+    self.mediaKeyTap.updateMediaKeyTap(active: active)
   }
 
   func setStartAtLogin(enabled: Bool) {
@@ -338,10 +421,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func setMenu() {
-    menu = MenuHandler()
-    menu.delegate = menu
-    self.statusItem.button?.image = NSImage(named: "status")
-    self.statusItem.menu = menu
+    if !DEBUG_MACOS10, #available(macOS 11.0, *) {
+      let symbolImage = NSImage(systemSymbolName: "display", accessibilityDescription: NSLocalizedString("MonitorControl", comment: "Status item label"))
+      let image = symbolImage ?? NSImage(named: "status")
+      image?.isTemplate = true
+      self.statusItem.button?.image = image
+    } else {
+      let image = NSImage(named: "status")
+      image?.isTemplate = true
+      self.statusItem.button?.image = image
+    }
+    if #available(macOS 10.15, *) {
+      let controller = MenuPopoverController()
+      self.menuPopoverController = controller
+      controller.attach(to: self.statusItem)
+      self.statusItem.menu = nil
+    } else {
+      menu = MenuHandler()
+      menu?.delegate = menu
+      self.statusItem.menu = menu
+    }
   }
 
   private func showSafeModeAlertIfNeeded() {
@@ -359,16 +458,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     onboardingVc?.window?.center()
     NSApp.activate(ignoringOtherApps: true)
   }
-  
+
   private func statusItemVisibilityChanged() {
     if !self.statusItem.isVisible, self.statusItemVisibilityChangedByUser {
       prefs.set(MenuIcon.hide.rawValue, forKey: PrefKey.menuIcon.rawValue)
     }
   }
-  
+
   func updateStatusItemVisibility(_ visible: Bool) {
-    statusItemVisibilityChangedByUser = false
-    statusItem.isVisible = visible
-    statusItemVisibilityChangedByUser = true
+    self.statusItemVisibilityChangedByUser = false
+    self.statusItem.isVisible = visible
+    self.statusItemVisibilityChangedByUser = true
   }
 }

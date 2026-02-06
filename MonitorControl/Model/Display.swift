@@ -2,6 +2,7 @@
 
 import Cocoa
 import Foundation
+import IOKit
 import os.log
 
 class Display: Equatable {
@@ -15,6 +16,147 @@ class Display: Equatable {
   var smoothBrightnessRunning: Bool = false
   var smoothBrightnessSlow: Bool = false
   let swBrightnessSemaphore = DispatchSemaphore(value: 1)
+
+  private static func normalizedPrefsName(_ name: String) -> String {
+    name.filter { !$0.isWhitespace }
+  }
+
+  private static func stablePrefsName(displayID: CGDirectDisplayID, fallbackName: String) -> String {
+    let rawName = DisplayManager.getDisplayRawNameByID(displayID: displayID)
+    return rawName.isEmpty ? fallbackName : rawName
+  }
+
+  private static func readIORegStringProperty(displayID: CGDirectDisplayID, key: String) -> String? {
+    var service: io_service_t = 0
+    CGSServiceForDisplayNumber(displayID, &service)
+    guard service != 0 else {
+      return nil
+    }
+    defer {
+      IOObjectRelease(service)
+    }
+    guard let unmanaged = IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, IOOptionBits(kIORegistryIterateRecursively)) else {
+      return nil
+    }
+    return unmanaged.takeRetainedValue() as? String
+  }
+
+  private static func stablePrefsToken(displayID: CGDirectDisplayID, serialNumber: UInt32?, isVirtual: Bool) -> String {
+    if isVirtual {
+      return String(serialNumber ?? 9999)
+    }
+
+    func sanitizeToken(_ token: String) -> String {
+      token.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: " ", with: "")
+    }
+
+    if let edidUUID = self.readIORegStringProperty(displayID: displayID, key: "EDID UUID").map(sanitizeToken), !edidUUID.isEmpty {
+      return edidUUID
+    }
+
+    if Arm64DDC.isArm64 {
+      let matches = Arm64DDC.getServiceMatches(displayIDs: [displayID])
+      if let match = matches.first, !match.serviceDetails.edidUUID.isEmpty {
+        return sanitizeToken(match.serviceDetails.edidUUID)
+      }
+    }
+
+    let unitNumber = CGDisplayUnitNumber(displayID)
+    if unitNumber != 0, unitNumber != UInt32.max {
+      return String(unitNumber)
+    }
+
+    if let serialNumber, serialNumber != 0 {
+      return String(serialNumber)
+    }
+
+    return String(displayID)
+  }
+
+  private static func makePrefsId(name: String, vendorNumber: UInt32?, modelNumber: UInt32?, displayID: CGDirectDisplayID, serialNumber: UInt32?, isVirtual: Bool) -> String {
+    let normalizedName = self.normalizedPrefsName(name)
+    let token = self.stablePrefsToken(displayID: displayID, serialNumber: serialNumber, isVirtual: isVirtual)
+    return "(\(normalizedName)\(vendorNumber ?? 0)\(modelNumber ?? 0)@\(token))"
+  }
+
+  private static func makeLegacyPrefsId(name: String, vendorNumber: UInt32?, modelNumber: UInt32?, displayID: CGDirectDisplayID, serialNumber: UInt32?, isVirtual: Bool) -> String {
+    let normalizedName = self.normalizedPrefsName(name)
+    let token = isVirtual ? String(serialNumber ?? 9999) : String(displayID)
+    return "(\(normalizedName)\(vendorNumber ?? 0)\(modelNumber ?? 0)@\(token))"
+  }
+
+  private static func migratePrefsIfNeeded(vendorNumber: UInt32?, modelNumber: UInt32?, displayID: CGDirectDisplayID, serialNumber: UInt32?, isVirtual _: Bool, to newPrefsId: String) {
+    let existing = prefs.dictionaryRepresentation()
+    guard !existing.keys.contains(where: { $0.hasSuffix(newPrefsId) }) else {
+      return
+    }
+
+    let marker = "\(vendorNumber ?? 0)\(modelNumber ?? 0)@"
+    var candidates: [String: Int] = [:]
+    for key in existing.keys {
+      guard key.hasSuffix(")"), let start = key.lastIndex(of: "(") else {
+        continue
+      }
+      let suffix = String(key[start...])
+      guard suffix != newPrefsId, suffix.contains(marker) else {
+        continue
+      }
+      candidates[suffix, default: 0] += 1
+    }
+
+    guard !candidates.isEmpty else {
+      return
+    }
+
+    let currentDisplayIDToken = String(displayID)
+    let currentSerialToken = serialNumber.map(String.init)
+    let unitNumber = CGDisplayUnitNumber(displayID)
+    let currentUnitToken = (unitNumber != 0 && unitNumber != UInt32.max) ? String(unitNumber) : nil
+
+    func score(candidate: String) -> Int {
+      let keyCount = candidates[candidate, default: 0]
+      let touchedKey = PrefKey.isTouched.rawValue + String(Command.brightness.rawValue) + candidate
+      let valueKey = PrefKey.value.rawValue + String(Command.brightness.rawValue) + candidate
+      let isTouched = (existing[touchedKey] as? Bool) ?? false
+      let hasBrightnessValue = existing[valueKey] != nil
+      var score = keyCount
+      if candidate.contains("@\(currentDisplayIDToken))") {
+        score += 2500
+      }
+      if let currentSerialToken, candidate.contains("@\(currentSerialToken))") {
+        score += 2500
+      }
+      if let currentUnitToken, candidate.contains("@\(currentUnitToken))") {
+        score += 2500
+      }
+      if isTouched {
+        score += 5000
+      }
+      if hasBrightnessValue {
+        score += 1000
+      }
+      return score
+    }
+
+    guard let bestCandidate = candidates.keys.max(by: { score(candidate: $0) < score(candidate: $1) }) else {
+      return
+    }
+
+    var migrated = 0
+    for (key, value) in existing where key.hasSuffix(bestCandidate) {
+      let newKey = String(key.dropLast(bestCandidate.count)) + newPrefsId
+      guard prefs.object(forKey: newKey) == nil else {
+        continue
+      }
+      prefs.set(value, forKey: newKey)
+      migrated += 1
+    }
+
+    if migrated > 0 {
+      os_log("Migrated %{public}@ prefs keys from %{public}@ to %{public}@", type: .info, String(migrated), bestCandidate, newPrefsId)
+    }
+  }
 
   static func == (lhs: Display, rhs: Display) -> Bool {
     lhs.identifier == rhs.identifier
@@ -71,7 +213,10 @@ class Display: Equatable {
     self.serialNumber = serialNumber
     self.isVirtual = DEBUG_VIRTUAL ? true : isVirtual
     self.isDummy = isDummy
-    self.prefsId = "(\(name.filter { !$0.isWhitespace })\(vendorNumber ?? 0)\(modelNumber ?? 0)@\(self.isVirtual ? (self.serialNumber ?? 9999) : identifier))"
+    let prefsName = Display.stablePrefsName(displayID: identifier, fallbackName: name)
+    let newPrefsId = Display.makePrefsId(name: prefsName, vendorNumber: vendorNumber, modelNumber: modelNumber, displayID: identifier, serialNumber: serialNumber, isVirtual: self.isVirtual)
+    Display.migratePrefsIfNeeded(vendorNumber: vendorNumber, modelNumber: modelNumber, displayID: identifier, serialNumber: serialNumber, isVirtual: self.isVirtual, to: newPrefsId)
+    self.prefsId = newPrefsId
     os_log("Display init with prefsIdentifier %{public}@", type: .info, self.prefsId)
     self.swUpdateDefaultGammaTable()
     self.smoothBrightnessTransient = self.getBrightness()
@@ -165,7 +310,6 @@ class Display: Equatable {
       _ = self.setDirectBrightness(self.smoothBrightnessTransient, transient: true)
       self.smoothBrightnessRunning = false
     }
-    self.swBrightnessSemaphore.signal()
     return true
   }
 
@@ -225,14 +369,16 @@ class Display: Equatable {
     currentValue = self.swBrightnessTransform(value: currentValue)
     newValue = self.swBrightnessTransform(value: newValue)
     if smooth {
+      let usesShade = self.isVirtual || self.readPrefAsBool(key: .avoidGamma)
+      let effectiveDisplayID = DisplayManager.resolveEffectiveDisplayID(self.identifier)
       DispatchQueue.global(qos: .userInteractive).async {
+        defer { self.swBrightnessSemaphore.signal() }
         for transientValue in stride(from: currentValue, to: newValue, by: 0.005 * (currentValue > newValue ? -1 : 1)) {
           guard app.reconfigureID == 0 else {
-            self.swBrightnessSemaphore.signal()
             return
           }
-          if self.isVirtual || self.readPrefAsBool(key: .avoidGamma) {
-            _ = DisplayManager.shared.setShadeAlpha(value: 1 - transientValue, displayID: DisplayManager.resolveEffectiveDisplayID(self.identifier))
+          if usesShade {
+            _ = DisplayManager.shared.setShadeAlpha(value: 1 - transientValue, displayID: effectiveDisplayID)
           } else {
             let gammaTableRed = self.defaultGammaTableRed.map { $0 * transientValue }
             let gammaTableGreen = self.defaultGammaTableGreen.map { $0 * transientValue }
@@ -242,6 +388,7 @@ class Display: Equatable {
           Thread.sleep(forTimeInterval: 0.001) // Let's make things quick if not performed in the background
         }
       }
+      return true
     } else {
       if self.isVirtual || self.readPrefAsBool(key: .avoidGamma) {
         self.swBrightnessSemaphore.signal()
@@ -307,7 +454,7 @@ class Display: Equatable {
       alert.addButton(withTitle: NSLocalizedString("Disable gamma control for my displays", comment: "Shown in the alert dialog"))
       alert.alertStyle = NSAlert.Style.critical
       if alert.runModal() != .alertFirstButtonReturn {
-        for otherDisplay in DisplayManager.shared.getOtherDisplays() {
+        for otherDisplay in DisplayManager.shared.getLGOtherDisplays() {
           _ = otherDisplay.setSwBrightness(1)
           _ = otherDisplay.setDirectBrightness(1)
           otherDisplay.savePref(true, key: .avoidGamma)

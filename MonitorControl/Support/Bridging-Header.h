@@ -53,4 +53,3 @@ bool CGSIsHDRSupported(CGDirectDisplayID display) __attribute__((weak_import));
 @property(readonly) id <OSDUIHelperProtocol> remoteObjectProxy; // @dynamic remoteObjectProxy;
 
 @end
-

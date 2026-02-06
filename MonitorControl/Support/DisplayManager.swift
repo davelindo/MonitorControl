@@ -5,14 +5,20 @@ import CoreGraphics
 import os.log
 
 class DisplayManager {
-  public static let shared = DisplayManager()
+  static let shared = DisplayManager()
 
   var displays: [Display] = []
   var audioControlTargetDisplays: [OtherDisplay] = []
   let globalDDCQueue = DispatchQueue(label: "Global DDC queue")
+  private let shadeUpdateQueue = DispatchQueue(label: "Shade update queue")
   let gammaActivityEnforcer = NSWindow(contentRect: .init(origin: NSPoint(x: 0, y: 0), size: .init(width: DEBUG_GAMMA_ENFORCER ? 15 : 1, height: DEBUG_GAMMA_ENFORCER ? 15 : 1)), styleMask: [], backing: .buffered, defer: false)
   var gammaInterferenceCounter = 0
   var gammaInterferenceWarningShown = false
+  /// LG vendor code "GSM" is commonly reported as 0x1E6D.
+  private let lgVendorIDs: Set<UInt32> = [0x1E6D]
+  // Keep the menu visible briefly after launch even with no LG display.
+  private let launchDate = Date()
+  private let launchMenuGracePeriod: TimeInterval = 60
 
   func createGammaActivityEnforcer() {
     self.gammaActivityEnforcer.title = "Monitor Control Gamma Activity Enforcer"
@@ -43,6 +49,46 @@ class DisplayManager {
 
   var shades: [CGDirectDisplayID: NSWindow] = [:]
   var shadeGrave: [NSWindow] = []
+  private var pendingShadeAlpha: [CGDirectDisplayID: Float] = [:]
+  private var shadeUpdateScheduled: Set<CGDirectDisplayID> = []
+
+  private func onMainSync<T>(_ work: () -> T) -> T {
+    if Thread.isMainThread {
+      return work()
+    }
+    return DispatchQueue.main.sync(execute: work)
+  }
+
+  private func applyPendingShadeAlpha(displayID: CGDirectDisplayID) {
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async {
+        self.applyPendingShadeAlpha(displayID: displayID)
+      }
+      return
+    }
+    var pending: Float?
+    self.shadeUpdateQueue.sync {
+      pending = self.pendingShadeAlpha[displayID]
+      self.pendingShadeAlpha.removeValue(forKey: displayID)
+      self.shadeUpdateScheduled.remove(displayID)
+    }
+    guard let pending else {
+      return
+    }
+    if let shade = self.getShade(displayID: displayID) {
+      shade.contentView?.alphaValue = CGFloat(pending)
+    }
+    // If more updates arrived while we were applying, schedule another pass.
+    self.shadeUpdateQueue.async(flags: .barrier) {
+      guard self.pendingShadeAlpha[displayID] != nil, !self.shadeUpdateScheduled.contains(displayID) else {
+        return
+      }
+      self.shadeUpdateScheduled.insert(displayID)
+      DispatchQueue.main.async {
+        self.applyPendingShadeAlpha(displayID: displayID)
+      }
+    }
+  }
 
   func isDisqualifiedFromShade(_ displayID: CGDirectDisplayID) -> Bool {
     if CGDisplayIsInHWMirrorSet(displayID) != 0 || CGDisplayIsInMirrorSet(displayID) != 0 {
@@ -63,88 +109,107 @@ class DisplayManager {
   }
 
   func createShadeOnDisplay(displayID: CGDirectDisplayID) -> NSWindow? {
-    if let screen = DisplayManager.getByDisplayID(displayID: displayID) {
-      let shade = NSWindow(contentRect: .init(origin: NSPoint(x: 0, y: 0), size: .init(width: 10, height: 1)), styleMask: [], backing: .buffered, defer: false)
-      shade.title = "Monitor Control Window Shade for Display " + String(displayID)
-      shade.isMovableByWindowBackground = false
-      shade.backgroundColor = .clear
-      shade.ignoresMouseEvents = true
-      shade.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-      shade.orderFrontRegardless()
-      shade.collectionBehavior = [.stationary, .canJoinAllSpaces, .ignoresCycle]
-      shade.setFrame(screen.frame, display: true)
-      shade.contentView?.wantsLayer = true
-      shade.contentView?.alphaValue = 0.0
-      shade.contentView?.layer?.backgroundColor = .black
-      shade.contentView?.setNeedsDisplay(shade.frame)
-      os_log("Window shade created for display %{public}@", type: .info, String(displayID))
-      return shade
+    self.onMainSync {
+      if let screen = DisplayManager.getByDisplayID(displayID: displayID) {
+        let shade = NSWindow(contentRect: .init(origin: NSPoint(x: 0, y: 0), size: .init(width: 10, height: 1)), styleMask: [], backing: .buffered, defer: false)
+        shade.title = "Monitor Control Window Shade for Display " + String(displayID)
+        shade.isMovableByWindowBackground = false
+        shade.backgroundColor = .clear
+        shade.ignoresMouseEvents = true
+        shade.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        shade.orderFrontRegardless()
+        shade.collectionBehavior = [.stationary, .canJoinAllSpaces, .ignoresCycle]
+        shade.setFrame(screen.frame, display: true)
+        shade.contentView?.wantsLayer = true
+        shade.contentView?.alphaValue = 0.0
+        shade.contentView?.layer?.backgroundColor = NSColor.black.cgColor
+        shade.contentView?.setNeedsDisplay(shade.frame)
+        os_log("Window shade created for display %{public}@", type: .info, String(displayID))
+        return shade
+      }
+      return nil
     }
-    return nil
   }
 
   func getShade(displayID: CGDirectDisplayID) -> NSWindow? {
-    guard !self.isDisqualifiedFromShade(displayID) else {
-      return nil
-    }
-    if let shade = shades[displayID] {
-      return shade
-    } else {
+    self.onMainSync {
+      guard !self.isDisqualifiedFromShade(displayID) else {
+        return nil
+      }
+      if let shade = self.shades[displayID] {
+        return shade
+      }
       if let shade = self.createShadeOnDisplay(displayID: displayID) {
         self.shades[displayID] = shade
         return shade
       }
+      return nil
     }
-    return nil
   }
 
   func destroyAllShades() -> Bool {
-    var ret = false
-    for displayID in self.shades.keys {
-      os_log("Attempting to destory shade for display  %{public}@", type: .info, String(displayID))
-      if self.destroyShade(displayID: displayID) {
-        ret = true
+    self.onMainSync {
+      var ret = false
+      for displayID in self.shades.keys {
+        os_log("Attempting to destory shade for display  %{public}@", type: .info, String(displayID))
+        if self.destroyShade(displayID: displayID) {
+          ret = true
+        }
       }
+      if ret {
+        os_log("Destroyed all shades.", type: .info)
+      } else {
+        os_log("No shades were found to be destroyed.", type: .info)
+      }
+      return ret
     }
-    if ret {
-      os_log("Destroyed all shades.", type: .info)
-    } else {
-      os_log("No shades were found to be destroyed.", type: .info)
-    }
-    return ret
   }
 
   func destroyShade(displayID: CGDirectDisplayID) -> Bool {
-    if let shade = shades[displayID] {
-      os_log("Destroying shade for display %{public}@", type: .info, String(displayID))
-      self.shadeGrave.append(shade)
-      self.shades.removeValue(forKey: displayID)
-      shade.close()
-      return true
+    self.shadeUpdateQueue.async(flags: .barrier) {
+      self.pendingShadeAlpha.removeValue(forKey: displayID)
+      self.shadeUpdateScheduled.remove(displayID)
     }
-    return false
+    return self.onMainSync {
+      if let shade = self.shades[displayID] {
+        os_log("Destroying shade for display %{public}@", type: .info, String(displayID))
+        self.shadeGrave.append(shade)
+        self.shades.removeValue(forKey: displayID)
+        shade.close()
+        return true
+      }
+      return false
+    }
   }
 
   func updateShade(displayID: CGDirectDisplayID) -> Bool {
-    guard !self.isDisqualifiedFromShade(displayID) else {
-      return false
-    }
-    if let screen = DisplayManager.getByDisplayID(displayID: displayID) {
-      if let shade = getShade(displayID: displayID) {
+    self.onMainSync {
+      guard !self.isDisqualifiedFromShade(displayID) else {
+        return false
+      }
+      if let screen = DisplayManager.getByDisplayID(displayID: displayID), let shade = self.getShade(displayID: displayID) {
         shade.setFrame(screen.frame, display: true)
         return true
       }
+      return false
     }
-    return false
   }
 
   func getShadeAlpha(displayID: CGDirectDisplayID) -> Float? {
     guard !self.isDisqualifiedFromShade(displayID) else {
       return 1
     }
-    if let shade = getShade(displayID: displayID) {
-      return Float(shade.contentView?.alphaValue ?? 1)
-    } else {
+    var pending: Float?
+    self.shadeUpdateQueue.sync {
+      pending = self.pendingShadeAlpha[displayID]
+    }
+    if let pending {
+      return pending
+    }
+    return self.onMainSync {
+      if let shade = self.getShade(displayID: displayID) {
+        return Float(shade.contentView?.alphaValue ?? 1)
+      }
       return 1
     }
   }
@@ -153,11 +218,18 @@ class DisplayManager {
     guard !self.isDisqualifiedFromShade(displayID) else {
       return false
     }
-    if let shade = getShade(displayID: displayID) {
-      shade.contentView?.alphaValue = CGFloat(value)
-      return true
+    let clamped = max(0, min(1, value))
+    self.shadeUpdateQueue.async(flags: .barrier) {
+      self.pendingShadeAlpha[displayID] = clamped
+      guard !self.shadeUpdateScheduled.contains(displayID) else {
+        return
+      }
+      self.shadeUpdateScheduled.insert(displayID)
+      DispatchQueue.main.async {
+        self.applyPendingShadeAlpha(displayID: displayID)
+      }
     }
-    return false
+    return true
   }
 
   func configureDisplays() {
@@ -177,6 +249,7 @@ class DisplayManager {
       let isDummy: Bool = DisplayManager.isDummy(displayID: onlineDisplayID)
       let isVirtual: Bool = DisplayManager.isVirtual(displayID: onlineDisplayID)
       if !DEBUG_SW, DisplayManager.isAppleDisplay(displayID: onlineDisplayID) { // MARK: (point of interest for testing)
+
         let appleDisplay = AppleDisplay(id, name: name, vendorNumber: vendorNumber, modelNumber: modelNumber, serialNumber: serialNumber, isVirtual: isVirtual, isDummy: isDummy)
         os_log("Apple display found - %{public}@", type: .info, "ID: \(appleDisplay.identifier), Name: \(appleDisplay.name) (Vendor: \(appleDisplay.vendorNumber ?? 0), Model: \(appleDisplay.modelNumber ?? 0))")
         self.addDisplay(display: appleDisplay)
@@ -188,8 +261,50 @@ class DisplayManager {
     }
   }
 
+  private func isLikelyLG(display: Display) -> Bool {
+    if let vendor = display.vendorNumber, self.lgVendorIDs.contains(vendor) {
+      return true
+    }
+    let lowerName = display.name.lowercased()
+    return lowerName.contains("lg") || lowerName.contains("ultrafine")
+  }
+
+  func isLGDisplay(_ display: Display) -> Bool {
+    let isExternal = CGDisplayIsBuiltin(display.identifier) == 0
+    return isExternal && !display.isDummy && self.isLikelyLG(display: display)
+  }
+
+  func hasLGDisplaysConnected() -> Bool {
+    self.displays.contains { self.isLGDisplay($0) }
+  }
+
+  private func autoHideEnabled() -> Bool {
+    prefs.object(forKey: PrefKey.autoHideWhenNoLG.rawValue) == nil
+      ? true
+      : prefs.bool(forKey: PrefKey.autoHideWhenNoLG.rawValue)
+  }
+
+  func isLGActive() -> Bool {
+    // Opt-out: keep running even when no LG displays are present.
+    if !self.autoHideEnabled() {
+      return true
+    }
+    return self.hasLGDisplaysConnected()
+  }
+
+  func isInLaunchMenuGracePeriod() -> Bool {
+    guard self.autoHideEnabled(), !self.hasLGDisplaysConnected() else {
+      return false
+    }
+    return Date().timeIntervalSince(self.launchDate) < self.launchMenuGracePeriod
+  }
+
+  func shouldKeepMenuVisible() -> Bool {
+    self.isLGActive() || self.isInLaunchMenuGracePeriod()
+  }
+
   func setupOtherDisplays(firstrun: Bool = false) {
-    for otherDisplay in self.getOtherDisplays() {
+    for otherDisplay in self.getLGOtherDisplays() {
       for command in [Command.audioSpeakerVolume, Command.contrast] where !otherDisplay.readPrefAsBool(key: .unavailableDDC, for: command) && !otherDisplay.isSw() {
         otherDisplay.setupCurrentAndMaxValues(command: command, firstrun: firstrun)
       }
@@ -241,44 +356,46 @@ class DisplayManager {
   }
 
   func sortDisplays() {
-    // Opsiyonel: sıralamadan önce log al
-    let before = displays.map { $0.name }
+    let before = self.displays.map(\.name)
     os_log("Displays before sorting: %{public}@", before)
-    
-    // In‑place sıralama
-    displays.sort { lhs, rhs in
+
+    self.displays.sort { lhs, rhs in
       lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
     }
-    
-    // Opsiyonel: sıralamadan sonra log al
-    let after = displays.map { $0.name }
+
+    let after = self.displays.map(\.name)
     os_log("Displays after sorting: %{public}@", after)
   }
-  
-  func sortDisplaysByFriendlyName() -> [Display] {
-      return displays.sorted { lhs, rhs in
-          let lhsTitle = lhs.readPrefAsString(key: .friendlyName).isEmpty
-              ? lhs.name
-              : lhs.readPrefAsString(key: .friendlyName)
-          let rhsTitle = rhs.readPrefAsString(key: .friendlyName).isEmpty
-              ? rhs.name
-              : rhs.readPrefAsString(key: .friendlyName)
-          return lhsTitle.localizedStandardCompare(rhsTitle) == .orderedDescending
-      }
+
+  func sortDisplaysByFriendlyName(_ displayList: [Display]? = nil) -> [Display] {
+    let list = displayList ?? self.displays
+
+    func title(for display: Display) -> String {
+      let friendly = display.readPrefAsString(key: .friendlyName)
+      return friendly.isEmpty ? display.name : friendly
+    }
+
+    return list.sorted { lhs, rhs in
+      let lhsTitle = title(for: lhs)
+      let rhsTitle = title(for: rhs)
+      return lhsTitle.localizedStandardCompare(rhsTitle) == .orderedDescending
+    }
   }
 
-
-
-  /// displays dizisini sıralar ve döner
+  /// Returns the current display list.
   func getAllDisplays() -> [Display] {
-    return displays
+    self.displays
   }
 
   func getDdcCapableDisplays() -> [OtherDisplay] {
-    self.displays.compactMap { display -> OtherDisplay? in
-      if let otherDisplay = display as? OtherDisplay, !otherDisplay.isSw() {
-        return otherDisplay
-      } else { return nil }
+    self.displays.compactMap { display in
+      guard let otherDisplay = display as? OtherDisplay else {
+        return nil
+      }
+      guard !otherDisplay.isSw(), self.isLGDisplay(otherDisplay) else {
+        return nil
+      }
+      return otherDisplay
     }
   }
 
@@ -286,8 +403,34 @@ class DisplayManager {
     self.displays.compactMap { $0 as? AppleDisplay }
   }
 
+  func getLGDisplays() -> [Display] {
+    self.displays.filter { self.isLGDisplay($0) }
+  }
+
+  func getLGOtherDisplays() -> [OtherDisplay] {
+    self.displays.compactMap { display in
+      guard let otherDisplay = display as? OtherDisplay, self.isLGDisplay(otherDisplay) else {
+        return nil
+      }
+      return otherDisplay
+    }
+  }
+
+  func getLGAppleDisplays() -> [AppleDisplay] {
+    self.displays.compactMap { display in
+      guard let appleDisplay = display as? AppleDisplay, self.isLGDisplay(appleDisplay) else {
+        return nil
+      }
+      return appleDisplay
+    }
+  }
+
   func getBuiltInDisplay() -> Display? {
     self.displays.first { CGDisplayIsBuiltin($0.identifier) != 0 }
+  }
+
+  func isBuiltInDisplayActive() -> Bool {
+    NSScreen.screens.contains { CGDisplayIsBuiltin($0.displayID) != 0 }
   }
 
   func getCurrentDisplay(byFocus: Bool = false) -> Display? {
@@ -306,6 +449,13 @@ class DisplayManager {
     }
   }
 
+  func getCurrentLGDisplay(byFocus: Bool = false) -> Display? {
+    if let current = self.getCurrentDisplay(byFocus: byFocus), self.isLGDisplay(current) {
+      return current
+    }
+    return self.getLGDisplays().first
+  }
+
   func addDisplay(display: Display) {
     self.displays.append(display)
   }
@@ -313,7 +463,7 @@ class DisplayManager {
   func clearDisplays() {
     self.displays = []
   }
-  
+
   func addDisplayCounterSuffixes() {
     var nameDisplays: [String: [Display]] = [:]
     for display in self.displays {
@@ -336,11 +486,11 @@ class DisplayManager {
     if Arm64DDC.isArm64 {
       os_log("arm64 AVService update requested", type: .info)
       var displayIDs: [CGDirectDisplayID] = []
-      for otherDisplay in self.getOtherDisplays() {
+      for otherDisplay in self.getLGOtherDisplays() {
         displayIDs.append(otherDisplay.identifier)
       }
       for serviceMatch in Arm64DDC.getServiceMatches(displayIDs: displayIDs) {
-        for otherDisplay in self.getOtherDisplays() where otherDisplay.identifier == serviceMatch.displayID && serviceMatch.service != nil {
+        for otherDisplay in self.getLGOtherDisplays() where otherDisplay.identifier == serviceMatch.displayID && serviceMatch.service != nil {
           otherDisplay.arm64avService = serviceMatch.service
           os_log("Display service match successful for display %{public}@", type: .info, String(serviceMatch.displayID))
           if serviceMatch.discouraged {
@@ -360,7 +510,7 @@ class DisplayManager {
   }
 
   func resetSwBrightnessForAllDisplays(prefsOnly: Bool = false, noPrefSave: Bool = false, async: Bool = false) {
-    for otherDisplay in self.getOtherDisplays() {
+    for otherDisplay in self.getLGOtherDisplays() {
       if !prefsOnly {
         _ = otherDisplay.setSwBrightness(1, smooth: async, noPrefSave: noPrefSave)
         if !noPrefSave {
@@ -377,7 +527,7 @@ class DisplayManager {
   }
 
   func restoreSwBrightnessForAllDisplays(async: Bool = false) {
-    for otherDisplay in self.getOtherDisplays() {
+    for otherDisplay in self.getLGOtherDisplays() {
       if (otherDisplay.readPrefAsFloat(for: .brightness) == 0 && !prefs.bool(forKey: PrefKey.disableCombinedBrightness.rawValue)) || (otherDisplay.readPrefAsFloat(for: .brightness) < otherDisplay.combinedBrightnessSwitchingValue() && !prefs.bool(forKey: PrefKey.separateCombinedScale.rawValue) && !prefs.bool(forKey: PrefKey.disableCombinedBrightness.rawValue)) || otherDisplay.isSw() {
         let savedPrefValue = otherDisplay.readPrefAsFloat(key: .SwBrightness)
         if otherDisplay.getSwBrightness() != savedPrefValue {
@@ -398,14 +548,14 @@ class DisplayManager {
 
   func getAffectedDisplays(isBrightness: Bool = false, isVolume: Bool = false) -> [Display]? {
     var affectedDisplays: [Display]
-    let allDisplays = self.getAllDisplays()
+    let allDisplays = self.getLGDisplays()
     var currentDisplay: Display?
     if isBrightness {
       if prefs.integer(forKey: PrefKey.multiKeyboardBrightness.rawValue) == MultiKeyboardBrightness.allScreens.rawValue {
         affectedDisplays = allDisplays
         return affectedDisplays
       }
-      currentDisplay = self.getCurrentDisplay(byFocus: prefs.integer(forKey: PrefKey.multiKeyboardBrightness.rawValue) == MultiKeyboardBrightness.focusInsteadOfMouse.rawValue)
+      currentDisplay = self.getCurrentLGDisplay(byFocus: prefs.integer(forKey: PrefKey.multiKeyboardBrightness.rawValue) == MultiKeyboardBrightness.focusInsteadOfMouse.rawValue)
     }
     if isVolume {
       if prefs.integer(forKey: PrefKey.multiKeyboardVolume.rawValue) == MultiKeyboardVolume.allScreens.rawValue {
@@ -414,7 +564,7 @@ class DisplayManager {
       } else if prefs.integer(forKey: PrefKey.multiKeyboardVolume.rawValue) == MultiKeyboardVolume.audioDeviceNameMatching.rawValue {
         return self.audioControlTargetDisplays
       }
-      currentDisplay = self.getCurrentDisplay(byFocus: false)
+      currentDisplay = self.getCurrentLGDisplay(byFocus: false)
     }
     if let currentDisplay = currentDisplay {
       affectedDisplays = [currentDisplay]
@@ -549,6 +699,7 @@ class DisplayManager {
       }
     }
     if let screen = getByDisplayID(displayID: displayID) { // MARK: This, and NSScreen+Extension.swift will not be needed when we drop MacOS 10 support.
+
       if #available(macOS 10.15, *) {
         return screen.localizedName
       } else {

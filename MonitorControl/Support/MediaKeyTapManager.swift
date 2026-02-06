@@ -20,6 +20,9 @@ class MediaKeyTapManager: MediaKeyTapDelegate {
     if isPressed, isCommand, !isControl, mediaKey == .brightnessDown, DisplayManager.engageMirror() {
       return
     }
+    guard DisplayManager.shared.isLGActive() else {
+      return
+    }
     guard app.sleepID == 0, app.reconfigureID == 0 else {
       return
     }
@@ -54,16 +57,9 @@ class MediaKeyTapManager: MediaKeyTapDelegate {
 
   func handleDirectedBrightness(isCommandModifier: Bool, isUp: Bool, isSmallIncrement: Bool) {
     if isCommandModifier {
-      for otherDisplay in DisplayManager.shared.getOtherDisplays() {
-        otherDisplay.stepBrightness(isUp: isUp, isSmallIncrement: isSmallIncrement)
+      for display in DisplayManager.shared.getLGDisplays() {
+        display.stepBrightness(isUp: isUp, isSmallIncrement: isSmallIncrement)
       }
-      for appleDisplay in DisplayManager.shared.getAppleDisplays() where !appleDisplay.isBuiltIn() {
-        appleDisplay.stepBrightness(isUp: isUp, isSmallIncrement: isSmallIncrement)
-      }
-      return
-    } else if let internalDisplay = DisplayManager.shared.getBuiltInDisplay() as? AppleDisplay {
-      internalDisplay.stepBrightness(isUp: isUp, isSmallIncrement: isSmallIncrement)
-      return
     }
   }
 
@@ -145,7 +141,11 @@ class MediaKeyTapManager: MediaKeyTapDelegate {
     return nil
   }
 
-  func updateMediaKeyTap() {
+  func updateMediaKeyTap(active: Bool) {
+    self.mediaKeyTap?.stop()
+    guard active else {
+      return
+    }
     var keys: [MediaKey] = []
     if [KeyboardBrightness.media.rawValue, KeyboardBrightness.both.rawValue].contains(prefs.integer(forKey: PrefKey.keyboardBrightness.rawValue)) {
       keys.append(contentsOf: [.brightnessUp, .brightnessDown])
@@ -177,7 +177,6 @@ class MediaKeyTapManager: MediaKeyTapDelegate {
         keys.removeAll { keysToDelete.contains($0) }
       }
     }
-    self.mediaKeyTap?.stop()
     // returning an empty array listens for all mediakeys in MediaKeyTap
     if keys.count > 0 {
       self.mediaKeyTap = MediaKeyTap(delegate: self, on: KeyPressMode.keyDownAndUp, for: keys, observeBuiltIn: true)

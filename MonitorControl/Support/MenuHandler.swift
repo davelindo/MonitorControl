@@ -2,6 +2,7 @@
 
 import AppKit
 import os.log
+import SwiftUI
 
 class MenuHandler: NSMenu, NSMenuDelegate {
   var combinedSliderHandler: [Command: SliderHandler] = [:]
@@ -34,33 +35,39 @@ class MenuHandler: NSMenu, NSMenuDelegate {
       self.cancelTrackingWithoutAnimation()
     }
     let menuIconPref = prefs.integer(forKey: PrefKey.menuIcon.rawValue)
+    let lgActive = DisplayManager.shared.isLGActive()
+    let launchGrace = DisplayManager.shared.isInLaunchMenuGracePeriod()
+    guard lgActive || launchGrace else {
+      self.clearMenu()
+      app.updateStatusItemVisibility(false)
+      return
+    }
+    if !lgActive {
+      self.clearMenu()
+      app.updateStatusItemVisibility(true)
+      self.addDefaultMenuOptions()
+      return
+    }
     var showIcon = false
     if menuIconPref == MenuIcon.show.rawValue {
       showIcon = true
     } else if menuIconPref == MenuIcon.externalOnly.rawValue {
-      let externalDisplays = DisplayManager.shared.displays.filter {
-        CGDisplayIsBuiltin($0.identifier) == 0
-      }
-      if externalDisplays.count > 0 {
-        showIcon = true
-      }
+      showIcon = !DisplayManager.shared.getLGDisplays().isEmpty
     }
     app.updateStatusItemVisibility(showIcon)
     self.clearMenu()
-    let currentDisplay = DisplayManager.shared.getCurrentDisplay()
-    var displays: [Display] = []
-    if !prefs.bool(forKey: PrefKey.hideAppleFromMenu.rawValue) {
-      displays.append(contentsOf: DisplayManager.shared.getAppleDisplays())
-    }
-    displays.append(contentsOf: DisplayManager.shared.getOtherDisplays())
-    displays = DisplayManager.shared.sortDisplaysByFriendlyName()
+    let currentDisplay = DisplayManager.shared.getCurrentLGDisplay()
+    var displays = DisplayManager.shared.getLGDisplays()
+    displays = DisplayManager.shared.sortDisplaysByFriendlyName(displays)
     let relevant = prefs.integer(forKey: PrefKey.multiSliders.rawValue) == MultiSliders.relevant.rawValue
     let combine = prefs.integer(forKey: PrefKey.multiSliders.rawValue) == MultiSliders.combine.rawValue
     let numOfDisplays = displays.filter { !$0.isDummy }.count
     if numOfDisplays != 0 {
+      let currentDisplayID = currentDisplay.map { DisplayManager.resolveEffectiveDisplayID($0.identifier) }
+      let shouldFilterRelevant = relevant && currentDisplayID != nil
       let asSubMenu: Bool = (displays.count > 3 && !relevant && !combine && app.macOS10()) ? true : false
       var iterator = 0
-      for display in displays where (!relevant || DisplayManager.resolveEffectiveDisplayID(display.identifier) == DisplayManager.resolveEffectiveDisplayID(currentDisplay!.identifier)) && !display.isDummy {
+      for display in displays where (!shouldFilterRelevant || DisplayManager.resolveEffectiveDisplayID(display.identifier) == currentDisplayID!) && !display.isDummy {
         iterator += 1
         if !relevant, !combine, iterator != 1, app.macOS10() {
           self.insertItem(NSMenuItem.separator(), at: 0)
@@ -76,7 +83,11 @@ class MenuHandler: NSMenu, NSMenuDelegate {
 
   func addSliderItem(monitorSubMenu: NSMenu, sliderHandler: SliderHandler) {
     let item = NSMenuItem()
-    item.view = sliderHandler.view
+    if let view = sliderHandler.view {
+      item.view = LiquidGlass.wrapMenuItemView(view, cornerRadius: 12, padding: 6)
+    } else {
+      item.view = sliderHandler.view
+    }
     monitorSubMenu.insertItem(item, at: 0)
     if app.macOS10() {
       let sliderHeaderItem = NSMenuItem()
@@ -139,7 +150,13 @@ class MenuHandler: NSMenu, NSMenuDelegate {
         blockNameView?.frame.size.width = contentWidth - margin * 2
         blockNameView?.alphaValue = 0.5
       }
-      let itemView = BlockView(frame: NSRect(x: 0, y: 0, width: contentWidth + margin * 2, height: contentHeight + margin * 2))
+      let itemView: NSView
+      let blockFrame = NSRect(x: 0, y: 0, width: contentWidth + margin * 2, height: contentHeight + margin * 2)
+      if !DEBUG_MACOS10, #available(macOS 26.0, *) {
+        itemView = NSView(frame: blockFrame)
+      } else {
+        itemView = BlockView(frame: blockFrame)
+      }
       var sliderPosition = CGFloat(margin * -1 + 1)
       for addedSliderHandler in addedSliderHandlers {
         addedSliderHandler.view!.setFrameOrigin(NSPoint(x: margin, y: margin + sliderPosition + 13))
@@ -151,7 +168,7 @@ class MenuHandler: NSMenu, NSMenuDelegate {
         itemView.addSubview(blockNameView)
       }
       let item = NSMenuItem()
-      item.view = itemView
+      item.view = LiquidGlass.wrapMenuItemView(itemView, cornerRadius: 14, padding: 6)
       if addedSliderHandlers.count != 0 {
         monitorSubMenu.insertItem(item, at: 0)
       }
@@ -217,7 +234,7 @@ class MenuHandler: NSMenu, NSMenuDelegate {
 
   func updateMenuRelevantDisplay() {
     if prefs.integer(forKey: PrefKey.multiSliders.rawValue) == MultiSliders.relevant.rawValue {
-      if let display = DisplayManager.shared.getCurrentDisplay(), display.identifier != self.lastMenuRelevantDisplayId {
+      if let display = DisplayManager.shared.getCurrentLGDisplay(), display.identifier != self.lastMenuRelevantDisplayId {
         os_log("Menu must be refreshed as relevant display changed since last time.")
         self.lastMenuRelevantDisplayId = display.identifier
         self.updateMenus(dontClose: true)
@@ -277,7 +294,7 @@ class MenuHandler: NSMenu, NSMenuDelegate {
       menuItemView.addSubview(updateIcon)
       menuItemView.addSubview(quitIcon)
       let item = NSMenuItem()
-      item.view = menuItemView
+      item.view = LiquidGlass.wrapMenuItemView(menuItemView, cornerRadius: 12, padding: 6)
       self.insertItem(item, at: self.items.count)
     } else if prefs.integer(forKey: PrefKey.menuItemStyle.rawValue) != MenuItemStyle.hide.rawValue {
       if app.macOS10() {
@@ -289,5 +306,65 @@ class MenuHandler: NSMenu, NSMenuDelegate {
       self.insertItem(updateItem, at: self.items.count)
       self.insertItem(withTitle: NSLocalizedString("Quit", comment: "Shown in menu"), action: #selector(app.quitClicked), keyEquivalent: "q", at: self.items.count)
     }
+  }
+}
+
+// MARK: - Liquid Glass Menu Wrappers
+
+private enum LiquidGlass {
+  static func wrapMenuItemView(_ view: NSView, cornerRadius: CGFloat, padding: CGFloat = 6) -> NSView {
+    guard #available(macOS 26.0, *) else {
+      return view
+    }
+    view.layoutSubtreeIfNeeded()
+    let fittingSize = view.fittingSize
+    let size = (fittingSize.width > 0 && fittingSize.height > 0) ? fittingSize : view.frame.size
+    view.frame.size = size
+    return GlassWrapperView(contentView: view, cornerRadius: cornerRadius, padding: padding)
+  }
+}
+
+@available(macOS 26.0, *)
+private final class GlassWrapperView: NSView {
+  private let contentView: NSView
+  private let padding: CGFloat
+
+  init(contentView: NSView, cornerRadius: CGFloat, padding: CGFloat) {
+    self.contentView = contentView
+    self.padding = padding
+    let contentSize = contentView.frame.size
+    let totalSize = CGSize(width: contentSize.width + padding * 2, height: contentSize.height + padding * 2)
+    super.init(frame: NSRect(origin: .zero, size: totalSize))
+
+    let hostingView = NSHostingView(rootView: GlassBackground(cornerRadius: cornerRadius))
+    hostingView.frame = bounds
+    hostingView.autoresizingMask = [.width, .height]
+    addSubview(hostingView, positioned: .below, relativeTo: nil)
+
+    contentView.removeFromSuperview()
+    contentView.frame = bounds.insetBy(dx: padding, dy: padding)
+    contentView.autoresizingMask = [.width, .height]
+    addSubview(contentView)
+  }
+
+  @available(*, unavailable)
+  required init?(coder _: NSCoder) {
+    nil
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    let localPoint = convert(point, to: contentView)
+    return self.contentView.hitTest(localPoint) ?? self.contentView
+  }
+}
+
+@available(macOS 26.0, *)
+private struct GlassBackground: View {
+  let cornerRadius: CGFloat
+
+  var body: some View {
+    Color.clear
+      .glassEffect(.regular.interactive(), in: .rect(cornerRadius: self.cornerRadius))
+      .allowsHitTesting(false)
   }
 }

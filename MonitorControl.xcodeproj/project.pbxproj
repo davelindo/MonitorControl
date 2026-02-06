@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		06FF1C68D20599F74563B52F /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C47B78613BA7736437581 /* PreferencesWindowController.swift */; };
+		10C95D1A2BB14144BED68E4E /* DynamicBrightnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B9642170794FE38DE1D0E0 /* DynamicBrightnessManager.swift */; };
 		28D1DDF2227FBE71004CB494 /* NSScreen+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28D1DDF1227FBE71004CB494 /* NSScreen+Extension.swift */; };
 		28D1DDF3227FC8C6004CB494 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 56754EB01D9A4016007BCDC5 /* Assets.xcassets */; };
 		56754EAF1D9A4016007BCDC5 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56754EAE1D9A4016007BCDC5 /* main.swift */; };
@@ -18,6 +20,7 @@
 		6CD35F53264FFFC6001F1344 /* SimplyCoreAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 6CD35F52264FFFC6001F1344 /* SimplyCoreAudio */; };
 		6CD35F5626500008001F1344 /* MediaKeyTap in Frameworks */ = {isa = PBXBuildFile; productRef = 6CD35F5526500008001F1344 /* MediaKeyTap */; };
 		6CDA0FCF26485A8300F52125 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 6CDA0FCD26485A8300F52125 /* Main.storyboard */; };
+		758CDD3E7CD08B99B01193D2 /* MenuPopoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D75985FA9BE51F33959FE37A /* MenuPopoverController.swift */; };
 		8C1741852707B91100E88D53 /* InternetAccessPolicy.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8C1741842707B91100E88D53 /* InternetAccessPolicy.plist */; };
 		8C1741882707B91F00E88D53 /* InternetAccessPolicy.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8C17418A2707B91F00E88D53 /* InternetAccessPolicy.strings */; };
 		AA062E8A26C9A039007E628C /* DisplaysPrefsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA062E8926C9A039007E628C /* DisplaysPrefsViewController.swift */; };
@@ -57,6 +60,8 @@
 		F06792EA200A73460066C438 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06792E9200A73460066C438 /* main.swift */; };
 		F06792F6200A745F0066C438 /* MonitorControlHelper.app in [Login] Copy Helper to start at Login */ = {isa = PBXBuildFile; fileRef = F06792E7200A73460066C438 /* MonitorControlHelper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F0A489C4279C71B200BEDFD6 /* OnboardingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A489C3279C71B200BEDFD6 /* OnboardingViewController.swift */; };
+		F47EB52F69D2B32511DA04B3 /* MenuPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9D3FAC215371A48DD173B9 /* MenuPopoverView.swift */; };
+		8387AC67768C449D913DF6FA /* MenuPopoverModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB27269554A049388DAE63FF /* MenuPopoverModel.swift */; };
 		FE4E0896249D584C003A50BB /* OSDUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4E0895249D584C003A50BB /* OSDUtils.swift */; };
 /* End PBXBuildFile section */
 
@@ -85,6 +90,8 @@
 		2FBCCED52853930200C06A13 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Main.strings; sourceTree = "<group>"; };
 		2FBCCED62853930200C06A13 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InternetAccessPolicy.strings; sourceTree = "<group>"; };
 		2FBCCED72853930200C06A13 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Localizable.strings; sourceTree = "<group>"; };
+		331C47B78613BA7736437581 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
+		55B9642170794FE38DE1D0E0 /* DynamicBrightnessManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DynamicBrightnessManager.swift; sourceTree = "<group>"; };
 		56754EAB1D9A4016007BCDC5 /* MonitorControl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonitorControl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		56754EAE1D9A4016007BCDC5 /* main.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; lineEnding = 0; path = main.swift; sourceTree = "<group>"; };
 		56754EB01D9A4016007BCDC5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -95,6 +102,8 @@
 		6CDA0FCE26485A8300F52125 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		6CDA0FD026485AA100F52125 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Main.strings; sourceTree = "<group>"; };
 		6CF93A782707981300BA219D /* MonitorControlDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MonitorControlDebug.entitlements; sourceTree = "<group>"; };
+		7A9D3FAC215371A48DD173B9 /* MenuPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPopoverView.swift; sourceTree = "<group>"; };
+		EB27269554A049388DAE63FF /* MenuPopoverModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPopoverModel.swift; sourceTree = "<group>"; };
 		8C1741842707B91100E88D53 /* InternetAccessPolicy.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = InternetAccessPolicy.plist; sourceTree = "<group>"; };
 		8C1741892707B91F00E88D53 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InternetAccessPolicy.strings; sourceTree = "<group>"; };
 		8C17418B2707B92200E88D53 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InternetAccessPolicy.strings"; sourceTree = "<group>"; };
@@ -166,6 +175,7 @@
 		B7FA437E2AC5857A00A94C01 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Main.strings; sourceTree = "<group>"; };
 		B7FA437F2AC5857A00A94C01 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InternetAccessPolicy.strings; sourceTree = "<group>"; };
 		B7FA43802AC5857A00A94C01 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+		D75985FA9BE51F33959FE37A /* MenuPopoverController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPopoverController.swift; sourceTree = "<group>"; };
 		F01B0682228221B6008E64DB /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		F01B0685228221B6008E64DB /* Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "Bridging-Header.h"; sourceTree = "<group>"; };
 		F01B0686228221B6008E64DB /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -310,8 +320,13 @@
 				AA99521626FE25AB00612E07 /* AppDelegate.swift */,
 				AA78BDBC2709FE7B00CA8DF7 /* UpdaterDelegate.swift */,
 				AA99521826FE49A300612E07 /* MenuHandler.swift */,
+				D75985FA9BE51F33959FE37A /* MenuPopoverController.swift */,
+				EB27269554A049388DAE63FF /* MenuPopoverModel.swift */,
+				7A9D3FAC215371A48DD173B9 /* MenuPopoverView.swift */,
+				331C47B78613BA7736437581 /* PreferencesWindowController.swift */,
 				F01B068F228221B7008E64DB /* SliderHandler.swift */,
 				6C85EFD922C941B000227EA1 /* DisplayManager.swift */,
+				55B9642170794FE38DE1D0E0 /* DynamicBrightnessManager.swift */,
 				AA25F6D626E68C160087F3A2 /* MediaKeyTapManager.swift */,
 				AA44E70627038F7F00E06865 /* KeyboardShortcutsManager.swift */,
 				AA16139A26BE772E00DCF027 /* Arm64DDC.swift */,
@@ -624,6 +639,10 @@
 				AA473EB126DFF8DE0063A181 /* Command.swift in Sources */,
 				6CC260F6256AD8F900613714 /* Preferences+Extension.swift in Sources */,
 				AA99521926FE49A300612E07 /* MenuHandler.swift in Sources */,
+				758CDD3E7CD08B99B01193D2 /* MenuPopoverController.swift in Sources */,
+				8387AC67768C449D913DF6FA /* MenuPopoverModel.swift in Sources */,
+				F47EB52F69D2B32511DA04B3 /* MenuPopoverView.swift in Sources */,
+				06FF1C68D20599F74563B52F /* PreferencesWindowController.swift in Sources */,
 				AA665A5D26C5892800FEF2C1 /* AboutPrefsViewController.swift in Sources */,
 				6CBFE27C23DB27A200D1BC41 /* AppleDisplay.swift in Sources */,
 				AA062E8E26CA7BE5007E628C /* DisplaysPrefsCellView.swift in Sources */,
@@ -645,6 +664,7 @@
 				AA25F6CF26E680510087F3A2 /* MenuslidersPrefsViewController.swift in Sources */,
 				AA4398A926DD55DA00943F16 /* IntelDDC.swift in Sources */,
 				6C85EFDA22C941B000227EA1 /* DisplayManager.swift in Sources */,
+				10C95D1A2BB14144BED68E4E /* DynamicBrightnessManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -864,12 +884,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = MonitorControl/MonitorControlDebug.entitlements;
 				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 7100;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 299YSU96J7;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/**",
@@ -901,12 +921,12 @@
 				ARCHS = "$(ARCHS_STANDARD)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 7100;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 299YSU96J7;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/**",
@@ -941,12 +961,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_ENTITLEMENTS = MonitorControlHelper/MonitorControlHelper.entitlements;
 				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 7100;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 299YSU96J7;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				INFOPLIST_FILE = MonitorControlHelper/Info.plist;
@@ -972,12 +992,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CODE_SIGN_ENTITLEMENTS = MonitorControlHelper/MonitorControlHelper.entitlements;
 				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 7100;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 299YSU96J7;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				INFOPLIST_FILE = MonitorControlHelper/Info.plist;

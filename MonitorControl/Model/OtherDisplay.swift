@@ -33,19 +33,18 @@ class OtherDisplay: Display {
     }
   }
 
-  func processCurrentDDCValue(isReadFromDisplay: Bool, command: Command, firstrun: Bool, currentDDCValue: UInt16) {
+  func processCurrentDDCValue(isReadFromDisplay: Bool, command: Command, firstrun _: Bool, currentDDCValue: UInt16) {
     if isReadFromDisplay {
       var currentValue = self.convDDCToValue(for: command, from: currentDDCValue)
       if !prefs.bool(forKey: PrefKey.disableCombinedBrightness.rawValue), command == .brightness {
         os_log("- Combined brightness mapping on DDC data.", type: .info)
         if currentValue > 0 {
           currentValue = self.combinedBrightnessSwitchingValue() + currentValue * (1 - self.combinedBrightnessSwitchingValue())
-        } else if currentValue == 0, firstrun, prefs.integer(forKey: PrefKey.startupAction.rawValue) != StartupAction.write.rawValue {
-          currentValue = self.combinedBrightnessSwitchingValue()
-        } else if self.prefExists(for: command), self.readPrefAsFloat(for: command) <= self.combinedBrightnessSwitchingValue() {
-          currentValue = self.readPrefAsFloat(for: command)
         } else {
-          currentValue = self.combinedBrightnessSwitchingValue()
+          // When the DDC-reported brightness is 0 in combined brightness mode, the actual dimming
+          // is done via software brightness. Infer the combined slider value from the current
+          // software brightness so the UI reflects the real state (even after sleep/reconfigure).
+          currentValue = self.getSwBrightness() * self.combinedBrightnessSwitchingValue()
         }
       }
       self.savePref(currentValue, for: command)
@@ -53,20 +52,20 @@ class OtherDisplay: Display {
         self.smoothBrightnessTransient = currentValue
       }
     } else {
-      var currentValue: Float = self.readPrefAsFloat(for: command)
       if !prefs.bool(forKey: PrefKey.disableCombinedBrightness.rawValue), command == .brightness {
         os_log("- Combined brightness mapping on saved data.", type: .info)
-        if !self.prefExists(for: command) {
-          currentValue = self.combinedBrightnessSwitchingValue() + self.convDDCToValue(for: command, from: currentDDCValue) * (1 - self.combinedBrightnessSwitchingValue())
-        } else if firstrun, currentValue < self.combinedBrightnessSwitchingValue(), prefs.integer(forKey: PrefKey.startupAction.rawValue) != StartupAction.write.rawValue {
-          currentValue = self.combinedBrightnessSwitchingValue()
-        }
+        let currentValue = self.prefExists(for: command)
+          ? self.readPrefAsFloat(for: command)
+          : (self.combinedBrightnessSwitchingValue() + self.convDDCToValue(for: command, from: currentDDCValue) * (1 - self.combinedBrightnessSwitchingValue()))
+        self.savePref(currentValue, for: command)
       } else {
-        currentValue = self.prefExists(for: command) ? self.readPrefAsFloat(for: command) : self.convDDCToValue(for: command, from: currentDDCValue)
+        let currentValue = self.prefExists(for: command)
+          ? self.readPrefAsFloat(for: command)
+          : self.convDDCToValue(for: command, from: currentDDCValue)
+        self.savePref(currentValue, for: command)
       }
-      self.savePref(currentValue, for: command)
       if command == .brightness {
-        self.smoothBrightnessTransient = currentValue
+        self.smoothBrightnessTransient = self.readPrefAsFloat(for: command)
       }
     }
   }
@@ -377,7 +376,7 @@ class OtherDisplay: Display {
     return intCodes
   }
 
-  public func writeDDCValues(command: Command, value: UInt16) {
+  func writeDDCValues(command: Command, value: UInt16) {
     guard app.sleepID == 0, app.reconfigureID == 0, !self.readPrefAsBool(key: .forceSw), !self.readPrefAsBool(key: .unavailableDDC, for: command) else {
       return
     }
@@ -500,7 +499,12 @@ class OtherDisplay: Display {
     let curveMultiplier = self.getCurveMultiplier(self.readPrefAsInt(key: .curveDDC, for: command))
     let minDDCValue = Float(self.readPrefAsInt(key: .minDDCOverride, for: command))
     let maxDDCValue = Float(self.readPrefAsInt(key: .maxDDC, for: command))
-    let normalizedValue = ((min(max(Float(from), minDDCValue), maxDDCValue) - minDDCValue) / (maxDDCValue - minDDCValue))
+    let range = maxDDCValue - minDDCValue
+    guard range > 0 else {
+      os_log("Invalid DDC range for %{public}@. min=%{public}@ max=%{public}@", type: .info, String(reflecting: command), String(minDDCValue), String(maxDDCValue))
+      return 0
+    }
+    let normalizedValue = ((min(max(Float(from), minDDCValue), maxDDCValue) - minDDCValue) / range)
     let deCurvedValue = pow(normalizedValue, 1.0 / curveMultiplier)
     var value = deCurvedValue
     if self.readPrefAsBool(key: .invertDDC, for: command) {

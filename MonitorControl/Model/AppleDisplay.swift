@@ -11,7 +11,7 @@ class AppleDisplay: Display {
     super.init(identifier, name: name, vendorNumber: vendorNumber, modelNumber: modelNumber, serialNumber: serialNumber, isVirtual: isVirtual, isDummy: isDummy)
   }
 
-  public func getAppleBrightness() -> Float {
+  func getAppleBrightness() -> Float {
     guard !self.isDummy else {
       return 1
     }
@@ -20,7 +20,7 @@ class AppleDisplay: Display {
     return brightness
   }
 
-  public func setAppleBrightness(value: Float) {
+  func setAppleBrightness(value: Float) {
     guard !self.isDummy else {
       return
     }
@@ -54,11 +54,10 @@ class AppleDisplay: Display {
     }
   }
 
-  override func refreshBrightness() -> Float {
+  func applySampledBrightness(_ brightness: Float) -> Float {
     guard !self.smoothBrightnessRunning else {
       return 0
     }
-    let brightness = self.getAppleBrightness()
     let oldValue = self.brightnessSyncSourceValue
     self.savePref(brightness, for: .brightness)
     if brightness != oldValue {
@@ -73,11 +72,21 @@ class AppleDisplay: Display {
         newValue = oldValue + min((brightness - oldValue) / 3, -0.005)
       }
       self.brightnessSyncSourceValue = newValue
-      if let sliderHandler = self.sliderHandler[.brightness] {
-        sliderHandler.setValue(newValue, displayID: self.identifier)
+      let displayID = self.identifier
+      let sliderValue = newValue
+      if Thread.isMainThread {
+        self.sliderHandler[.brightness]?.setValue(sliderValue, displayID: displayID)
+      } else {
+        DispatchQueue.main.async {
+          self.sliderHandler[.brightness]?.setValue(sliderValue, displayID: displayID)
+        }
       }
       return newValue - oldValue
     }
     return 0
+  }
+
+  override func refreshBrightness() -> Float {
+    self.applySampledBrightness(self.getAppleBrightness())
   }
 }
