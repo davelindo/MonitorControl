@@ -17,7 +17,7 @@ final class PreferencesWindowController: NSWindowController {
 
     // Clamp to the current screen so the window can't open off-screen on small displays.
     // Note: `setContentSize` takes content size, but `minSize` is a *frame* size.
-    let desiredContentSize = NSSize(width: 980, height: 620)
+    let desiredContentSize = NSSize(width: 880, height: 620)
     let desiredMinContentSize = NSSize(width: 680, height: 520)
 
     let screen = NSScreen.main ?? NSScreen.screens.first
@@ -92,8 +92,8 @@ private enum PreferencesPane: String, CaseIterable, Identifiable {
 
   var icon: String {
     switch self {
-    case .main: return "switch.2"
-    case .menusliders: return "filemenu.and.cursorarrow"
+    case .main: return "gearshape"
+    case .menusliders: return "menubar.rectangle"
     case .keyboard: return "keyboard"
     case .displays: return "display.2"
     case .about: return "info.circle"
@@ -115,8 +115,29 @@ private struct PreferencesRootView: View {
       .frame(minWidth: 190)
       .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 200)
     } detail: {
-      PreferencesPaneView(pane: self.selection)
-        .navigationTitle(self.selection.title)
+      PreferencesDetailScrollView {
+        PreferencesPaneView(pane: self.selection)
+          .navigationTitle(self.selection.title)
+      }
+    }
+  }
+}
+
+@available(macOS 13.0, *)
+private struct PreferencesDetailScrollView<Content: View>: View {
+  private let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    ScrollView {
+      self.content
+        .frame(maxWidth: 760, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
   }
 }
@@ -644,23 +665,20 @@ private struct DisplaysSettingsView: View {
   var body: some View {
     _ = self.prefsObserver
 
-    return ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        GroupBox {
-          Toggle(NSLocalizedString("Show advanced settings", comment: "Displays preference"), isOn: self.$showAdvancedSettings)
-            .toggleStyle(.switch)
-          Text(NSLocalizedString("Advanced settings may cause system freezes or unexpected behavior.", comment: "Displays preference help"))
-            .font(.caption)
-            .foregroundColor(.secondary)
-        }
+    return VStack(alignment: .leading, spacing: 16) {
+      GroupBox {
+        Toggle(NSLocalizedString("Show advanced settings", comment: "Displays preference"), isOn: self.$showAdvancedSettings)
+          .toggleStyle(.switch)
+        Text(NSLocalizedString("Advanced settings may cause system freezes or unexpected behavior.", comment: "Displays preference help"))
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
 
-        ForEach(self.model.displays, id: \.identifier) { display in
-          DisplaySettingsCard(display: display, showAdvanced: self.showAdvancedSettings) {
-            self.model.refresh()
-          }
+      ForEach(self.model.displays, id: \.identifier) { display in
+        DisplaySettingsCard(display: display, showAdvanced: self.showAdvancedSettings) {
+          self.model.refresh()
         }
       }
-      .padding(20)
     }
     .onAppear { self.model.start() }
     .onDisappear { self.model.stop() }
@@ -678,7 +696,7 @@ private struct DisplaySettingsCard: View {
   @State private var showingResetConfirmation: Bool = false
 
   var body: some View {
-    let displayInfo = DisplaysPrefsViewController.getDisplayInfo(display: self.display)
+    let displayInfo = DisplayControlInfoProvider.info(for: self.display)
     let title = self.friendlyNameOrSystemName
 
     return GroupBox {

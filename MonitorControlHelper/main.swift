@@ -13,8 +13,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let pathComponents = bundlePath.pathComponents
     let path = NSString.path(withComponents: Array(pathComponents[0 ..< (pathComponents.count - 4)]))
 
-    NSWorkspace.shared.launchApplication(path)
-    NSApp.terminate(nil)
+    let appURL = URL(fileURLWithPath: path)
+    let configuration = NSWorkspace.OpenConfiguration()
+    NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, _ in
+      NSApp.terminate(nil)
+    }
   }
 
   func applicationWillTerminate(_: Notification) {}

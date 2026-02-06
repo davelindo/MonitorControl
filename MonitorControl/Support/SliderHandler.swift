@@ -61,19 +61,11 @@ class SliderHandler {
       return super.stopTracking(last: lastPoint, current: stopPoint, in: controlView, mouseIsUp: flag)
     }
 
-    override func drawKnob(_ knobRect: NSRect) {
-      guard !DEBUG_MACOS10, #available(macOS 11.0, *) else {
-        super.drawKnob(knobRect)
-        return
-      }
+    override func drawKnob(_: NSRect) {
       // This is intentionally empty as the knob is inside the bar. Please leave it like this!
     }
 
-    override func drawBar(inside aRect: NSRect, flipped: Bool) {
-      guard !DEBUG_MACOS10, #available(macOS 11.0, *) else {
-        super.drawBar(inside: aRect, flipped: flipped)
-        return
-      }
+    override func drawBar(inside aRect: NSRect, flipped _: Bool) {
       var maxValue: Float = self.floatValue
       var minValue: Float = self.floatValue
 
@@ -217,46 +209,36 @@ class SliderHandler {
     slider.isEnabled = true
     slider.setNumOfCustomTickmarks(prefs.bool(forKey: PrefKey.showTickMarks.rawValue) ? 5 : 0)
     self.slider = slider
-    if !DEBUG_MACOS10, #available(macOS 11.0, *) {
-      slider.frame.size.width = 180
-      slider.frame.origin = NSPoint(x: 15, y: 5)
-      let view = NSView(frame: NSRect(x: 0, y: 0, width: slider.frame.width + 30 + (showPercent ? 38 : 0), height: slider.frame.height + 14))
-      view.frame.origin = NSPoint(x: 12, y: 0)
-      var iconName = "circle.dashed"
-      switch command {
-      case .audioSpeakerVolume: iconName = "speaker.wave.2.fill"
-      case .brightness: iconName = "sun.max.fill"
-      case .contrast: iconName = "circle.lefthalf.fill"
-      default: break
-      }
-      let icon = SliderHandler.ClickThroughImageView()
-      icon.image = NSImage(systemSymbolName: iconName, accessibilityDescription: title)
-      icon.contentTintColor = NSColor.black.withAlphaComponent(0.6)
-      icon.frame = NSRect(x: view.frame.origin.x + 6.5, y: view.frame.origin.y + 13, width: 15, height: 15)
-      icon.imageAlignment = .alignCenter
-      view.addSubview(slider)
-      view.addSubview(icon)
-      self.icon = icon
-      if showPercent {
-        let percentageBox = NSTextField(frame: NSRect(x: 15 + slider.frame.size.width - 2, y: 17, width: 40, height: 12))
-        self.setupPercentageBox(percentageBox)
-        self.percentageBox = percentageBox
-        view.addSubview(percentageBox)
-      }
-      self.view = view
-    } else {
-      slider.frame.size.width = 180
-      slider.frame.origin = NSPoint(x: 15, y: 5)
-      let view = NSView(frame: NSRect(x: 0, y: 0, width: slider.frame.width + 30 + (showPercent ? 38 : 0), height: slider.frame.height + 10))
-      view.addSubview(slider)
-      if showPercent {
-        let percentageBox = NSTextField(frame: NSRect(x: 15 + slider.frame.size.width - 2, y: 18, width: 40, height: 12))
-        self.setupPercentageBox(percentageBox)
-        self.percentageBox = percentageBox
-        view.addSubview(percentageBox)
-      }
-      self.view = view
+    slider.frame.size.width = 180
+    slider.frame.origin = NSPoint(x: 15, y: 5)
+    let view = NSView(frame: NSRect(x: 0, y: 0, width: slider.frame.width + 30 + (showPercent ? 38 : 0), height: slider.frame.height + 14))
+    view.frame.origin = NSPoint(x: 12, y: 0)
+
+    var iconName = "circle.dashed"
+    switch command {
+    case .audioSpeakerVolume: iconName = "speaker.wave.2.fill"
+    case .brightness: iconName = "sun.max.fill"
+    case .contrast: iconName = "circle.lefthalf.fill"
+    default: break
     }
+
+    let icon = SliderHandler.ClickThroughImageView()
+    icon.image = NSImage(systemSymbolName: iconName, accessibilityDescription: title)
+    icon.contentTintColor = NSColor.black.withAlphaComponent(0.6)
+    icon.frame = NSRect(x: view.frame.origin.x + 6.5, y: view.frame.origin.y + 13, width: 15, height: 15)
+    icon.imageAlignment = .alignCenter
+
+    view.addSubview(slider)
+    view.addSubview(icon)
+    self.icon = icon
+
+    if showPercent {
+      let percentageBox = NSTextField(frame: NSRect(x: 15 + slider.frame.size.width - 2, y: 17, width: 40, height: 12))
+      self.setupPercentageBox(percentageBox)
+      self.percentageBox = percentageBox
+      view.addSubview(percentageBox)
+    }
+    self.view = view
     slider.maxValue = 1
     if let displayToAppend = display {
       self.addDisplay(displayToAppend)

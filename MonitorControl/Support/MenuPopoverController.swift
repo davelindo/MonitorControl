@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-@available(macOS 10.15, *)
+@available(macOS 26.0, *)
 final class MenuPopoverController: NSObject, NSPopoverDelegate {
   private let popover: NSPopover
   private let model: MenuPopoverModel

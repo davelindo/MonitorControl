@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import Foundation
 
-@available(macOS 10.15, *)
+@available(macOS 26.0, *)
 final class MenuPopoverModel: ObservableObject {
   struct DisplaySection: Identifiable {
     let id: CGDirectDisplayID

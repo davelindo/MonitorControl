@@ -21,9 +21,6 @@ enum PrefKey: String {
   /// Menu item style
   case menuItemStyle
 
-  /// Use the redesigned menu popover UI (macOS 26+)
-  case useNewPopoverUI
-
   /// How display cards should expand/collapse in the menu popover
   case popoverCardExpansionMode
 

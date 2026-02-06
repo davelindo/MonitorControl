@@ -461,7 +461,6 @@ class Display: Equatable {
           _ = otherDisplay.setSwBrightness(1)
           DisplayManager.shared.gammaInterferenceWarningShown = false
           DisplayManager.shared.gammaInterferenceCounter = 0
-          displaysPrefsVc?.loadDisplayList()
         }
       } else {
         os_log("We won't watch for gamma table interference anymore", type: .info)

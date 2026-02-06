@@ -3,7 +3,7 @@
 import AppKit
 import SwiftUI
 
-@available(macOS 10.15, *)
+@available(macOS 26.0, *)
 struct MenuPopoverView: View {
   @ObservedObject var model: MenuPopoverModel
   /// Bumped on each popover show to reset internal ScrollView offsets/state.
@@ -11,108 +11,13 @@ struct MenuPopoverView: View {
   var requestContentSizeUpdate: (() -> Void)?
 
   var body: some View {
-    Group {
-      if #available(macOS 26.0, *), self.isNewPopoverEnabled {
-        NewMenuPopoverRoot(model: self.model, sessionID: self.sessionID, requestContentSizeUpdate: self.requestContentSizeUpdate)
-      } else {
-        LegacyMenuPopoverRoot(model: self.model, sessionID: self.sessionID)
-      }
-    }
+    NewMenuPopoverRoot(
+      model: self.model,
+      sessionID: self.sessionID,
+      requestContentSizeUpdate: self.requestContentSizeUpdate
+    )
     // Ensure SwiftUI doesn't preserve view-local scroll state between popover shows.
     .id(self.sessionID)
-  }
-
-  private var isNewPopoverEnabled: Bool {
-    guard #available(macOS 26.0, *) else { return false }
-    if prefs.object(forKey: PrefKey.useNewPopoverUI.rawValue) == nil {
-      return true
-    }
-    return prefs.bool(forKey: PrefKey.useNewPopoverUI.rawValue)
-  }
-}
-
-@available(macOS 10.15, *)
-private struct LegacyMenuPopoverRoot: View {
-  @ObservedObject var model: MenuPopoverModel
-  let sessionID: Int
-
-  var body: some View {
-    Group {
-      if #available(macOS 11.0, *) {
-        ScrollViewReader { proxy in
-          ScrollView {
-            VStack(spacing: 0) {
-              Color.clear
-                .frame(height: 0)
-                .id("top")
-              Group {
-                if #available(macOS 26.0, *) {
-                  GlassEffectContainer(spacing: 12) { self.content }
-                } else {
-                  self.content
-                }
-              }
-              .padding(12)
-            }
-          }
-          .onAppear { Self.scrollToTop(proxy) }
-          .onChange(of: self.sessionID) { _ in Self.scrollToTop(proxy) }
-        }
-      } else {
-        ScrollView {
-          Group {
-            if #available(macOS 26.0, *) {
-              GlassEffectContainer(spacing: 12) { self.content }
-            } else {
-              self.content
-            }
-          }
-          .padding(12)
-        }
-      }
-    }
-    .frame(minWidth: 280, maxWidth: 360, maxHeight: 420)
-    .clipped()
-  }
-
-  @available(macOS 11.0, *)
-  private static func scrollToTop(_ proxy: ScrollViewProxy) {
-    // Defer so the ScrollView's underlying NSScrollView exists and has a size.
-    DispatchQueue.main.async {
-      proxy.scrollTo("top", anchor: .top)
-    }
-  }
-
-  private var content: some View {
-    VStack(spacing: 12) {
-      if !self.model.isLGActive {
-        InactiveStateView(model: self.model)
-          .modifier(GlassCard())
-      } else if self.model.sliderMode == .combine {
-        if self.model.combinedCommands.isEmpty {
-          Text(NSLocalizedString("No controllable displays found.", comment: "Shown in menu"))
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .modifier(GlassCard())
-        } else {
-          CombinedSectionView(model: self.model)
-        }
-      } else {
-        if self.model.displaySections.isEmpty {
-          Text(NSLocalizedString("No controllable displays found.", comment: "Shown in menu"))
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .modifier(GlassCard())
-        } else {
-          ForEach(self.model.displaySections) { section in
-            DisplaySectionView(section: section, model: self.model)
-          }
-        }
-      }
-      if self.model.isLGActive {
-        FooterActionsView(model: self.model)
-      }
-    }
   }
 }
 

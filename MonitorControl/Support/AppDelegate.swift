@@ -6,7 +6,6 @@ import Foundation
 import MediaKeyTap
 import os.log
 import ServiceManagement
-import Settings
 import SimplyCoreAudio
 import Sparkle
 
@@ -20,8 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var mediaKeyTap = MediaKeyTapManager()
   var keyboardShortcuts = KeyboardShortcutsManager()
   let coreAudio = SimplyCoreAudio()
-  // Store as base types; availability-gated casts call SwiftUI controllers.
-  var menuPopoverController: NSObject?
+  var menuPopoverController: MenuPopoverController?
   var accessibilityObserver: NSObjectProtocol!
   var statusItemObserver: NSObjectProtocol!
   var statusItemVisibilityChangedByUser = true
@@ -33,27 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var startupActionWriteCounter: Int = 0
   var audioPlayer: AVAudioPlayer?
   let updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: UpdaterDelegate(), userDriverDelegate: nil)
-
-  var settingsPaneStyle: Settings.Style {
-    if !DEBUG_MACOS10, #available(macOS 11.0, *) {
-      return Settings.Style.toolbarItems
-    } else {
-      return Settings.Style.segmentedControl
-    }
-  }
-
-  lazy var settingsWindowController: SettingsWindowController = .init(
-    panes: [
-      mainPrefsVc!,
-      menuslidersPrefsVc!,
-      keyboardPrefsVc!,
-      displaysPrefsVc!,
-      aboutPrefsVc!,
-    ],
-    style: self.settingsPaneStyle,
-    animated: true
-  )
-  private var preferencesWindowController: NSWindowController?
+  private var preferencesWindowController: PreferencesWindowController?
 
   func applicationDidFinishLaunching(_: Notification) {
     app = self
@@ -79,11 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc func quitClicked(_: AnyObject) {
     os_log("Quit clicked", type: .info)
-    if #available(macOS 10.15, *), let controller = self.menuPopoverController as? MenuPopoverController {
-      controller.closePopover()
-    } else {
-      menu?.closeMenu()
-    }
+    self.menuPopoverController?.closePopover()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
       NSApplication.shared.terminate(self)
     }
@@ -91,19 +65,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc func prefsClicked(_: AnyObject) {
     os_log("Settings clicked", type: .info)
-    if #available(macOS 13.0, *) {
-      if self.preferencesWindowController == nil {
-        self.preferencesWindowController = PreferencesWindowController()
-      }
-      if let controller = self.preferencesWindowController as? PreferencesWindowController {
-        controller.show()
-      } else {
-        self.preferencesWindowController?.showWindow(nil)
-      }
-      return
+    if self.preferencesWindowController == nil {
+      self.preferencesWindowController = PreferencesWindowController()
     }
-
-    self.settingsWindowController.show()
+    self.preferencesWindowController?.show()
   }
 
   func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
@@ -186,7 +151,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DisplayManager.shared.restoreSwBrightnessForAllDisplays(async: !prefs.bool(forKey: PrefKey.disableSmoothBrightness.rawValue))
       }
     }
-    displaysPrefsVc?.loadDisplayList()
     self.job(start: true)
   }
 
@@ -194,17 +158,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let lgActive = DisplayManager.shared.isLGActive()
     let keepMenuVisible = DisplayManager.shared.shouldKeepMenuVisible()
     if lgActive || keepMenuVisible {
-      if #available(macOS 10.15, *), let controller = self.menuPopoverController as? MenuPopoverController {
-        controller.updateStatusItemVisibility()
-      } else {
-        menu?.updateMenus()
-      }
+      self.menuPopoverController?.updateStatusItemVisibility()
     } else {
-      if #available(macOS 10.15, *), let controller = self.menuPopoverController as? MenuPopoverController {
-        controller.closePopover()
-      } else {
-        menu?.closeMenu()
-      }
+      self.menuPopoverController?.closePopover()
       self.updateStatusItemVisibility(false)
     }
     self.updateMediaKeyTap(active: lgActive)
@@ -399,14 +355,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  func macOS10() -> Bool {
-    if !DEBUG_MACOS10, #available(macOS 11.0, *) {
-      return false
-    } else {
-      return true
-    }
-  }
-
   func playVolumeChangedSound() {
     guard let settings = app.getSystemSettings(), let hasSoundEnabled = settings["com.apple.sound.beep.feedback"] as? Int, hasSoundEnabled == 1 else {
       return
@@ -421,26 +369,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func setMenu() {
-    if !DEBUG_MACOS10, #available(macOS 11.0, *) {
-      let symbolImage = NSImage(systemSymbolName: "display", accessibilityDescription: NSLocalizedString("MonitorControl", comment: "Status item label"))
-      let image = symbolImage ?? NSImage(named: "status")
-      image?.isTemplate = true
-      self.statusItem.button?.image = image
-    } else {
-      let image = NSImage(named: "status")
-      image?.isTemplate = true
-      self.statusItem.button?.image = image
-    }
-    if #available(macOS 10.15, *) {
-      let controller = MenuPopoverController()
-      self.menuPopoverController = controller
-      controller.attach(to: self.statusItem)
-      self.statusItem.menu = nil
-    } else {
-      menu = MenuHandler()
-      menu?.delegate = menu
-      self.statusItem.menu = menu
-    }
+    let symbolImage = NSImage(systemSymbolName: "display", accessibilityDescription: NSLocalizedString("MonitorControl", comment: "Status item label"))
+    let image = symbolImage ?? NSImage(named: "status")
+    image?.isTemplate = true
+    self.statusItem.button?.image = image
+
+    let controller = MenuPopoverController()
+    self.menuPopoverController = controller
+    controller.attach(to: self.statusItem)
+    self.statusItem.menu = nil
   }
 
   private func showSafeModeAlertIfNeeded() {
